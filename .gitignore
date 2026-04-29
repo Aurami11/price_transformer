@@ -1,5 +1,5 @@
 .vscode
 __pycache__
 
-output_parquet_2018/*.*
+output_parquet_2018/
 output_parquet_2018.rar
