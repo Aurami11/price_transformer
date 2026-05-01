@@ -1,0 +1,7 @@
+.vscode
+__pycache__
+
+output_parquet_2018/
+output_parquet/
+output_parquet_2018.rar
+processed_gdelt_cache*.parquet
