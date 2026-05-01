@@ -5,3 +5,5 @@ output_parquet_2018/
 output_parquet/
 output_parquet_2018.rar
 processed_gdelt_cache*.parquet
+processed_gdelt_cache.parquet
+processed_gdelt_cache_2018_11_22_09_15.parquet
