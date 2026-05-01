@@ -73,41 +73,30 @@ def main():
     portfolio.fetch_company_profiles()
     portfolio.build_correlation_matrix()
     
-    # On multiplie les signaux Macro (GDELT) par les sensibilités Micro (Yahoo)
-    asset_signals = portfolio.apply_signals(daily_concept_signals)
-
     # ==========================================
-    # ÉTAPE 4 : Moteur de Backtest & Exécution
+    # ÉTAPE 4 : Initialisation Moteur Backtest
     # ==========================================
-    print("\n[4/5] Téléchargement des prix et exécution financière...")
+    print("\n[4/5] Préparation du Moteur de Simulation Boursière...")
     bt_engine = BacktestEngine(
         tickers=tickers, 
         start_date=config['backtest']['start_date'], 
         end_date=config['backtest']['end_date']
     )
-    
-    daily_returns, equity_curve = bt_engine.run_strategy(
-        asset_signals, 
-        strategy=config['backtest']['strategy'], 
-        top_n=config['backtest']['top_n']
-    )
 
     # ==========================================
-    # ÉTAPE 5 : Visualisation et Export des Résultats
+    # ÉTAPE 5 : Parameter Sweep & Dashboarding
     # ==========================================
-    # On initialise le générateur de dashboard (il crée le dossier 'output' automatiquement)
+    print("\n[5/5] Lancement des scénarios multiples et génération du HTML...")
+    from reporting_engine import QuantReportGenerator
+    
     report_gen = QuantReportGenerator(output_dir="output")
     
-    # On récupère la matrice W pour l'inclure dans le rapport (pour voir les "yeux" de l'IA)
-    matrice_w_brute = portfolio.get_matrix(normalize=False)
-    
-    # Génération du HTML et des CSV
-    report_gen.generate_html_report(
+    # On délègue tout le travail d'exécution croisée et de rendu au nouveau module
+    report_gen.generate_mega_report(
         config=config,
-        equity_curve=equity_curve,
-        daily_returns=daily_returns,
-        asset_signals=asset_signals,
-        matrice_w=matrice_w_brute
+        gdelt_long_df=gdelt_long_df,
+        portfolio=portfolio,
+        bt_engine=bt_engine
     )
 
 if __name__ == "__main__":
