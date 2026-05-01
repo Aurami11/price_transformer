@@ -1,5 +1,6 @@
 import json
 import pandas as pd
+import os
 
 # Importation de tes modules sur-mesure
 from latent_signal_generator import LatentSpaceIndicator
@@ -84,20 +85,24 @@ def main():
     )
 
     # ==========================================
-    # ÉTAPE 5 : Parameter Sweep & Dashboarding
+    # ÉTAPE 5 : Exportation pour le Dashboard Streamlit
     # ==========================================
-    print("\n[5/5] Lancement des scénarios multiples et génération du HTML...")
-    from reporting_engine import QuantReportGenerator
+    print("\n[5/5] Exportation des données pour l'interface interactive...")
+    os.makedirs("dashboard_data", exist_ok=True)
     
-    report_gen = QuantReportGenerator(output_dir="output")
+    # 1. Sauvegarde de la Matrice W
+    portfolio.get_matrix(normalize=False).to_csv("dashboard_data/matrice_w.csv")
     
-    # On délègue tout le travail d'exécution croisée et de rendu au nouveau module
-    report_gen.generate_mega_report(
-        config=config,
-        gdelt_long_df=gdelt_long_df,
-        portfolio=portfolio,
-        bt_engine=bt_engine
-    )
+    # 2. Sauvegarde des Signaux Macro (Z20 et EMA5)
+    if 'Z20' in gdelt_long_df.columns:
+        gdelt_long_df.groupby(['Trading_Date', 'Concept'])['Z20'].sum().unstack(fill_value=0).to_csv("dashboard_data/macro_z20.csv")
+    if 'EMA5' in gdelt_long_df.columns:
+        gdelt_long_df.groupby(['Trading_Date', 'Concept'])['EMA5'].sum().unstack(fill_value=0).to_csv("dashboard_data/macro_ema5.csv")
+        
+    # 3. Sauvegarde des rendements du marché (Yahoo) pour ne pas retélécharger
+    bt_engine.returns.to_csv("dashboard_data/market_returns.csv")
+    
+    print("✅ Base de données prête ! Lancez la commande : streamlit run app.py")
 
 if __name__ == "__main__":
     main()
