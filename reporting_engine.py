@@ -12,7 +12,6 @@ class QuantReportGenerator:
             os.makedirs(self.output_dir)
 
     def calculate_metrics(self, daily_returns, equity_curve):
-        """Calcule les métriques quantitatives standards."""
         trading_days = 252
         cum_return = equity_curve.iloc[-1] - 1
         days = (equity_curve.index[-1] - equity_curve.index[0]).days
@@ -33,33 +32,42 @@ class QuantReportGenerator:
         }, drawdown
 
     def generate_mega_report(self, config, gdelt_long_df, portfolio, bt_engine):
-        """
-        Orchestre le Parameter Sweep complet et génère le Dashboard HTML final.
-        """
         print("\n=== GÉNÉRATION DU MÉGA RAPPORT D'ANALYSE ===")
         
         matrice_w = portfolio.get_matrix(normalize=False)
         matrice_w.to_csv(os.path.join(self.output_dir, "matrice_exposition.csv"))
 
         # ---------------------------------------------------------
-        # VISUAL 1 : PROJECTION DE L'ESPACE LATENT (PCA)
+        # VISUAL 1 : PROJECTION PCA (L'ESPACE LATENT)
         # ---------------------------------------------------------
         print(" -> Calcul de la projection spatiale des actifs (PCA)...")
         pca = PCA(n_components=2)
-        # On projette les actifs (lignes) depuis l'espace des concepts (colonnes) vers la 2D
         coords_2d = pca.fit_transform(matrice_w)
         
-        fig_pca = go.Figure(data=go.Scatter(
-            x=coords_2d[:, 0], y=coords_2d[:, 1],
-            mode='markers+text',
-            text=matrice_w.index,
-            textposition="top center",
-            marker=dict(size=10, color=coords_2d[:, 0], colorscale='Viridis', showscale=False)
-        ))
+        # On trouve le concept dominant pour chaque action pour la couleur
+        dominant_concepts = matrice_w.idxmax(axis=1)
+        
+        fig_pca = go.Figure()
+        for concept in matrice_w.columns:
+            mask = dominant_concepts == concept
+            if mask.sum() > 0:
+                fig_pca.add_trace(go.Scatter(
+                    x=coords_2d[mask, 0], 
+                    y=coords_2d[mask, 1],
+                    mode='markers+text',
+                    text=matrice_w.index[mask],
+                    textposition="top center",
+                    name=concept,
+                    marker=dict(size=12, line=dict(width=1, color='DarkSlateGrey'))
+                ))
+
         fig_pca.update_layout(
-            title="Comment l'IA voit ton univers (Clusters Sémantiques)",
-            xaxis_title="Composante Principale 1", yaxis_title="Composante Principale 2",
-            height=600, template="plotly_white"
+            title="Carte d'Espace Latent : Clusters Sémantiques des Actifs",
+            xaxis_title="Composante Principale 1", 
+            yaxis_title="Composante Principale 2",
+            height=700, 
+            template="plotly_white",
+            legend_title="Concept Dominant"
         )
 
         # ---------------------------------------------------------
@@ -68,65 +76,42 @@ class QuantReportGenerator:
         fig_matrix = go.Figure(data=go.Heatmap(
             z=matrice_w.values, x=matrice_w.columns, y=matrice_w.index, colorscale='Blues'
         ))
-        fig_matrix.update_layout(height=800, title="Exposition Nette Actifs / Concepts")
+        fig_matrix.update_layout(height=800, title="Exposition Nette Actifs / Concepts (Matrice W)")
 
         # ---------------------------------------------------------
-        # VISUAL 3 : PARAMETER SWEEP (Le Backtest Multidimensionnel)
+        # VISUAL 3 : PARAMETER SWEEP CORRIGÉ
         # ---------------------------------------------------------
         print(" -> Exécution du Parameter Sweep (Stratégies x Top_N x Métriques)...")
         
-        # On définit les axes de notre recherche
         metrics_to_test = ['Z20', 'EMA5'] if 'Z20' in gdelt_long_df.columns and 'EMA5' in gdelt_long_df.columns else [config['backtest']['signal_metric']]
         strategies = ['long_only', 'long_short']
         top_ns = [3, 5, 10]
         
         fig_sweep = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3], vertical_spacing=0.05)
         
-        buttons = []
-        trace_idx = 0
-        total_combos = len(metrics_to_test) * len(strategies) * len(top_ns)
-        
-        # Liste pour construire le tableau de synthèse HTML
+        # Étape 1 : On ajoute TOUTES les traces d'abord
         summary_table_rows = []
-
+        metrics_data = [] # Stocke les titres pour les boutons
+        
+        trace_idx = 0
         for metric in metrics_to_test:
-            print(f"   * Préparation des signaux pour la métrique {metric}...")
             daily_macro = gdelt_long_df.groupby(['Trading_Date', 'Concept'])[metric].sum().unstack(fill_value=0)
-            # On multiplie les signaux Macro (GDELT) par les sensibilités Micro (Yahoo)
             asset_signals = portfolio.apply_signals(daily_macro)
             
             for strat in strategies:
                 for n in top_ns:
                     combo_name = f"{metric} | {strat.upper()} | Top {n}"
                     
-                    # Run backtest
                     daily_ret, eq_curve = bt_engine.run_strategy(asset_signals, strategy=strat, top_n=n)
                     perf_metrics, drawdown = self.calculate_metrics(daily_ret, eq_curve)
                     
-                    # Sauvegarde des CSV avec le nom de la config
-                    file_suffix = f"{metric}_{strat}_top{n}"
-                    pd.DataFrame({'Return': daily_ret, 'Equity': eq_curve}).to_csv(os.path.join(self.output_dir, f"perf_{file_suffix}.csv"))
+                    is_visible = (trace_idx == 0) # Seule la toute première est visible
                     
-                    # Ajout des traces (Courbe + Drawdown) - Seule la 1ère combo est visible par défaut
-                    is_visible = (trace_idx == 0)
+                    fig_sweep.add_trace(go.Scatter(x=eq_curve.index, y=eq_curve.values, name=f"Equity ({combo_name})", line=dict(color='#2980b9'), visible=is_visible), row=1, col=1)
+                    fig_sweep.add_trace(go.Scatter(x=drawdown.index, y=drawdown.values, name=f"DD ({combo_name})", fill='tozeroy', line=dict(color='#e74c3c'), visible=is_visible), row=2, col=1)
                     
-                    fig_sweep.add_trace(go.Scatter(x=eq_curve.index, y=eq_curve.values, name="Equity", line=dict(color='#2980b9'), visible=is_visible), row=1, col=1)
-                    fig_sweep.add_trace(go.Scatter(x=drawdown.index, y=drawdown.values, name="Drawdown", fill='tozeroy', line=dict(color='#e74c3c'), visible=is_visible), row=2, col=1)
+                    metrics_data.append((combo_name, perf_metrics))
                     
-                    # Construction du bouton de menu Plotly
-                    # Chaque combo a 2 traces. On crée un tableau de booléens où seules les 2 traces actuelles sont True.
-                    visibility = [False] * (total_combos * 2)
-                    visibility[trace_idx * 2] = True
-                    visibility[(trace_idx * 2) + 1] = True
-                    
-                    buttons.append(dict(
-                        label=combo_name,
-                        method="update",
-                        args=[{"visible": visibility},
-                              {"title": f"Performance: {combo_name} | Sharpe: {perf_metrics['Ratio de Sharpe']} | Max DD: {perf_metrics['Max Drawdown']}"}]
-                    ))
-                    
-                    # Ajout au tableau de synthèse HTML
                     summary_table_rows.append(f"""
                         <tr>
                             <td>{metric}</td><td>{strat.upper()}</td><td>{n}</td>
@@ -135,13 +120,43 @@ class QuantReportGenerator:
                             <td>{perf_metrics['Max Drawdown']}</td>
                         </tr>
                     """)
-                    
                     trace_idx += 1
 
+        # Étape 2 : On crée les boutons avec la bonne longueur de tableau de visibilité
+        total_traces = len(fig_sweep.data)
+        buttons = []
+        
+        for i, (combo_name, perf_metrics) in enumerate(metrics_data):
+            # Tableau de booléens : tout est faux, sauf les 2 traces (Equity + DD) de l'itération 'i'
+            visibility = [False] * total_traces
+            visibility[i * 2] = True
+            visibility[(i * 2) + 1] = True
+            
+            buttons.append(dict(
+                label=combo_name,
+                method="update",
+                args=[
+                    {"visible": visibility},
+                    {"title": f"Performance: {combo_name} | Sharpe: {perf_metrics['Ratio de Sharpe']} | Max DD: {perf_metrics['Max Drawdown']}"}
+                ]
+            ))
+
+        # Étape 3 : Correction de la marge (margin t=120) pour que le menu ne cache pas le titre
         fig_sweep.update_layout(
-            updatemenus=[dict(active=0, buttons=buttons, x=0.0, xanchor="left", y=1.15, yanchor="top")],
-            height=700, template="plotly_white", showlegend=False,
-            title="Utilisez le menu déroulant ci-dessus pour changer de stratégie"
+            updatemenus=[dict(
+                active=0, 
+                buttons=buttons, 
+                direction="down",
+                x=0.01, 
+                xanchor="left", 
+                y=1.15, 
+                yanchor="bottom"
+            )],
+            height=700, 
+            template="plotly_white", 
+            showlegend=False,
+            margin=dict(t=120),
+            title=f"Performance: {metrics_data[0][0]} | Sharpe: {metrics_data[0][1]['Ratio de Sharpe']} | Max DD: {metrics_data[0][1]['Max Drawdown']}"
         )
 
         # ---------------------------------------------------------
@@ -150,6 +165,7 @@ class QuantReportGenerator:
         html_content = f"""
         <html>
         <head>
+            <meta charset="utf-8">
             <title>Mega Rapport Quantitatif</title>
             <style>
                 body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; background-color: #f0f2f5; color: #333; }}
@@ -185,7 +201,7 @@ class QuantReportGenerator:
 
                 <div class="card">
                     <h2>3. L'Espace Latent (Vision Interne de l'IA)</h2>
-                    <p>La carte PCA ci-dessous réduit les dimensions conceptuelles. Les entreprises qui apparaissent proches sont considérées par le Transformer comme faisant partie du même "bloc thématique". C'est un excellent outil pour vérifier si tes définitions dans le JSON sont assez discriminantes.</p>
+                    <p>La carte PCA ci-dessous réduit les 17 dimensions conceptuelles en 2 axes majeurs. Les entreprises de même couleur sont celles qui partagent le même concept dominant selon le Transformer. <b>Si NVDA et AMD sont côte à côte, le modèle a une excellente compréhension du secteur.</b></p>
                     {fig_pca.to_html(full_html=False, include_plotlyjs=False)}
                 </div>
                 
@@ -194,14 +210,6 @@ class QuantReportGenerator:
                     {fig_matrix.to_html(full_html=False, include_plotlyjs=False)}
                 </div>
 
-                <div class="card memo">
-                    <h3>💡 Mémo d'Analyse (Comment lire ces données)</h3>
-                    <ul>
-                        <li><b>Le "Sweet Spot" du Parameter Sweep :</b> Ne cherche pas la stratégie qui a le plus haut rendement, cherche celle dont le <b>Ratio de Sharpe est stable</b> peu importe si tu mets Top 3, Top 5 ou Top 10. Si Top 3 fait +50% mais Top 5 fait -10%, ton modèle a juste eu de la chance sur 2 actions. C'est de l'overfitting.</li>
-                        <li><b>EMA5 vs Z20 :</b> Si l'EMA5 surperforme le Z20, cela signifie que ton marché réagit mieux au "Momentum" (la tendance forte) qu'à "l'Anomalie" (un pic soudain de news).</li>
-                        <li><b>La Carte PCA :</b> Si tu vois toutes les entreprises regroupées en une seule grosse boule au centre, tes phrases d'ancrage (anchors) sont trop génériques. Si tu vois des amas bien distincts (ex: Les banques en haut à gauche, l'Agri en bas à droite), ton espace sémantique est mathématiquement sain.</li>
-                    </ul>
-                </div>
             </div>
         </body>
         </html>
