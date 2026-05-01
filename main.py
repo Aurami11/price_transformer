@@ -1,12 +1,12 @@
 import json
 import pandas as pd
-import matplotlib.pyplot as plt
 
-# Importation de tes 4 modules sur-mesure
+# Importation de tes modules sur-mesure
 from latent_signal_generator import LatentSpaceIndicator
 from gdelt_historical_pipeline import GdeltBacktestPipeline
 from auto_portfolio_allocator import AutoThematicPortfolio
 from backtest_engine import BacktestEngine
+from reporting_engine import QuantReportGenerator
 
 def main():
     print("=== DÉMARRAGE DU SYSTÈME QUANTITATIF THÉMATIQUE ===\n")
@@ -95,38 +95,20 @@ def main():
     # ==========================================
     # ÉTAPE 5 : Visualisation et Export des Résultats
     # ==========================================
-    print("\n[5/5] Génération du rapport de performance et sauvegarde...")
+    # On initialise le générateur de dashboard (il crée le dossier 'output' automatiquement)
+    report_gen = QuantReportGenerator(output_dir="output")
     
-    # --- EXPORTATION DES DONNÉES (CSV) ---
-    # 1. Sauvegarde des performances financières
-    results_df = pd.DataFrame({
-        'Daily_Return': daily_returns,
-        'Equity_Curve': equity_curve
-    })
-    results_df.to_csv("output_performance.csv")
-    print(" -> Performances sauvegardées dans 'output_performance.csv'")
+    # On récupère la matrice W pour l'inclure dans le rapport (pour voir les "yeux" de l'IA)
+    matrice_w_brute = portfolio.get_matrix(normalize=False)
     
-    # 2. Sauvegarde des signaux par actif (Idéal pour déboguer le comportement de l'IA)
-    asset_signals.to_csv("output_asset_signals.csv")
-    print(" -> Signaux des actifs sauvegardés dans 'output_asset_signals.csv'")
-    
-    # --- CRÉATION ET EXPORTATION DU GRAPHIQUE ---
-    plt.figure(figsize=(12, 6))
-    plt.plot(equity_curve.index, equity_curve.values, label=f"Stratégie {config['backtest']['strategy'].upper()}", color='blue')
-    
-    plt.title(f"Performance du Portefeuille Thématique ({config['backtest']['start_date']} - {config['backtest']['end_date']})")
-    plt.ylabel("Valeur du Portefeuille (Base 1)")
-    plt.xlabel("Date")
-    plt.grid(True, alpha=0.3)
-    plt.legend()
-    plt.tight_layout()
-
-    filename_plot = f"output_equity_curve_{config['backtest']['strategy']}.png"
-    plt.savefig(filename_plot)
-    print(f" -> Graphique sauvegardé sous '{filename_plot}'")
-    
-    # Affichage final à l'écran
-    plt.show()
+    # Génération du HTML et des CSV
+    report_gen.generate_html_report(
+        config=config,
+        equity_curve=equity_curve,
+        daily_returns=daily_returns,
+        asset_signals=asset_signals,
+        matrice_w=matrice_w_brute
+    )
 
 if __name__ == "__main__":
     main()
