@@ -60,6 +60,10 @@ def main():
     metric = config['backtest']['signal_metric']
     print(f"Extraction de la métrique {metric} pour la génération du signal d'exécution...")
     
+    # Sauvegarde des données Macro ventilées PAR PAYS pour l'analyse Géo
+    if 'Z20' in gdelt_long_df.columns:
+        gdelt_long_df.groupby(['Trading_Date', 'Country', 'Concept'])['Z20'].sum().reset_index().to_csv("dashboard_data/country_macro.csv", index=False)
+    
     # On somme les Z-Scores de tous les pays/sessions pour avoir la "Force Globale du Concept" du jour
     daily_concept_signals = gdelt_long_df.groupby(['Trading_Date', 'Concept'])[metric].sum().unstack(fill_value=0)
 
