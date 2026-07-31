@@ -298,5 +298,11 @@
         "strategy": "long_short",
         "top_n": 10,
         "signal_metric": "EMA5"
+    },
+    "mode": "live",
+    "live": {
+        "rolling_window_hours": 6,
+        "auto_apply_temporal": false,
+        "run_duration_minutes": 60
     }
 }

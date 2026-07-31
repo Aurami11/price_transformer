@@ -106,8 +106,13 @@ with tab1:
     # -----------------------------------------------------
     # On isole les actions qui ont été tradées au moins une fois
     active_tickers = weights.columns[(weights != 0).any(axis=0)]
-    df_anim = weights[active_tickers].reset_index().melt(id_vars='index', var_name='Ticker', value_name='Poids')
-    df_anim.rename(columns={'index': 'Date'}, inplace=True)
+    
+    # 1. On copie et on force le nom de l'index de manière stricte
+    df_weights = weights[active_tickers].copy()
+    df_weights.index.name = 'Date'
+    
+    # 2. Maintenant on peut faire le melt en toute sécurité sur 'Date'
+    df_anim = df_weights.reset_index().melt(id_vars='Date', var_name='Ticker', value_name='Poids')
     df_anim['Date_str'] = df_anim['Date'].dt.strftime('%Y-%m-%d')
     
     # Nettoyage pour que l'animation soit fluide
@@ -157,7 +162,7 @@ with tab2:
         df_time_country = df_filtered.pivot(index='Trading_Date', columns='Country', values='Z20').fillna(0)
         
         # -----------------------------------------------------
-        # NOUVEAUTÉ : Multiselect avec Pays par défaut
+        # Multiselect avec Pays par défaut
         # -----------------------------------------------------
         all_countries = sorted(list(df_time_country.columns))
         # On met US et Chine par défaut si dispo, sinon on prend les 2 premiers
